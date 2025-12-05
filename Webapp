@@ -1,0 +1,331 @@
+// Budget Web App - Next.js / React starter
+// Single-file starter layout for a simple budget web app.
+// Files included below are separated with clear markers.
+// Instructions:
+// 1) Create a Next.js app (recommended) or Vite React app.
+//    npx create-next-app@latest budget-app
+// 2) Install dependencies:
+//    npm install @fullcalendar/react @fullcalendar/daygrid @fullcalendar/interaction recharts xlsx supabase-js tailwindcss postcss autoprefixer
+//    npx tailwindcss init -p
+// 3) Add Tailwind to globals.css (see Tailwind docs)
+// 4) Replace /pages/index.jsx with the contents of FILE: /pages/index.jsx below
+// 5) Add /components/CalendarView.jsx and /components/CashflowChart.jsx as shown
+// 6) Configure Supabase (optional) and set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local
+
+/* =========================
+   FILE: package.json (snippets)
+   =========================
+{
+  "name": "budget-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "@fullcalendar/react": "^6.1.8",
+    "@fullcalendar/daygrid": "^6.1.8",
+    "@fullcalendar/interaction": "^6.1.8",
+    "recharts": "^2.5.0",
+    "xlsx": "^0.18.5",
+    "@supabase/supabase-js": "^2.0.0"
+  }
+}
+*/
+
+/* =========================
+   FILE: pages/index.jsx
+   ========================= */
+
+import React, { useState, useEffect, useMemo } from 'react'
+import dynamic from 'next/dynamic'
+import CalendarView from '../components/CalendarView'
+import CashflowChart from '../components/CashflowChart'
+import { parseExcelToRecords, generateCalendarEvents, generateDailyBalances } from '../lib/dataHelpers'
+
+export default function Home() {
+  const [records, setRecords] = useState({ expenses: [], income: [] })
+  const [events, setEvents] = useState([])
+  const [balances, setBalances] = useState([])
+  const [startingBalance, setStartingBalance] = useState(1000)
+
+  // Handle file import from user (XLSX)
+  async function handleFile(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    const parsed = await parseExcelToRecords(file)
+    setRecords(parsed)
+  }
+
+  // Whenever records change, regenerate events and balances
+  useEffect(() => {
+    const ev = generateCalendarEvents(records)
+    setEvents(ev)
+    const daily = generateDailyBalances(records, startingBalance)
+    setBalances(daily)
+  }, [records, startingBalance])
+
+  // Quick sample import button (uses a sample dataset inline)
+  function loadSample() {
+    const sample = {
+      expenses: [
+        { id: 1, description: 'Rent', amount: 1200, frequency: 'monthly', day: 1 },
+        { id: 2, description: 'Internet', amount: 75, frequency: 'monthly', day: 5 },
+        { id: 3, description: 'Car Payment', amount: 300, frequency: 'biweekly', day: null },
+      ],
+      income: [
+        { id: 1, description: 'Paycheque', amount: 2200, frequency: 'biweekly', day: null },
+      ],
+    }
+    setRecords(sample)
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        <header className="mb-6">
+          <h1 className="text-3xl font-semibold">Budget web app — starter</h1>
+          <p className="text-sm text-gray-600">Import your Excel, see payments on a calendar and the cashflow chart.</p>
+        </header>
+
+        <section className="mb-4 flex gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Import Excel (xlsx)</label>
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="mt-1" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Starting balance</label>
+            <input type="number" value={startingBalance} onChange={(e)=>setStartingBalance(Number(e.target.value))} className="mt-1 p-2 border rounded" />
+          </div>
+
+          <div className="self-end">
+            <button onClick={loadSample} className="px-4 py-2 rounded bg-blue-600 text-white">Load sample</button>
+          </div>
+        </section>
+
+        <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-white p-4 rounded shadow">
+            <CalendarView events={events} />
+          </div>
+
+          <div className="bg-white p-4 rounded shadow">
+            <CashflowChart balances={balances} />
+          </div>
+        </main>
+
+        <footer className="mt-6 text-sm text-gray-600">
+          This starter generates calendar events for the next 60 days and plots daily balances. Customize the rules in /lib/dataHelpers.js
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+/* =========================
+   FILE: components/CalendarView.jsx
+   ========================= */
+
+import React from 'react'
+import FullCalendar from '@fullcalendar/react'
+import dayGridPlugin from '@fullcalendar/daygrid'
+import interactionPlugin from '@fullcalendar/interaction'
+
+export default function CalendarView({ events }) {
+  return (
+    <div>
+      <h2 className="text-xl font-medium mb-3">Calendar</h2>
+      <FullCalendar
+        plugins={[dayGridPlugin, interactionPlugin]}
+        initialView="dayGridMonth"
+        height={600}
+        events={events}
+        eventDisplay="block"
+      />
+    </div>
+  )
+}
+
+/* =========================
+   FILE: components/CashflowChart.jsx
+   ========================= */
+
+import React from 'react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, ResponsiveContainer } from 'recharts'
+
+export default function CashflowChart({ balances }) {
+  return (
+    <div>
+      <h2 className="text-xl font-medium mb-3">Cashflow (daily)</h2>
+      <div style={{ width: '100%', height: 400 }}>
+        <ResponsiveContainer>
+          <LineChart data={balances}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" />
+            <YAxis />
+            <Tooltip />
+            <ReferenceLine y={0} stroke="red" />
+            <Line type="monotone" dataKey="balance" dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+/* =========================
+   FILE: lib/dataHelpers.js
+   ========================= */
+
+// Lightweight helpers to parse Excel and create events/balances
+import * as XLSX from 'xlsx'
+
+export async function parseExcelToRecords(file) {
+  const arrayBuffer = await file.arrayBuffer()
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+  // Assumes first sheet named 'Expenses' and second named 'Income' or fallback
+  const sheetNames = workbook.SheetNames
+  function sheetToJsonSafe(name) {
+    if (!workbook.Sheets[name]) return []
+    return XLSX.utils.sheet_to_json(workbook.Sheets[name])
+  }
+  const expenses = sheetToJsonSafe('Expenses').map((r, idx) => ({ id: idx+1, description: r.Description || r.description || r.Desc || '', amount: Number(r.Amount || r.amount || 0), frequency: r.Frequency || r.frequency || 'monthly', day: r.Day || r.DayOfMonth || r.day || null }))
+  const income = sheetToJsonSafe('Income').map((r, idx) => ({ id: idx+1, description: r.Description || r.description || '', amount: Number(r.Amount || r.amount || 0), frequency: r.Frequency || r.frequency || 'monthly', day: r.Day || r.DayOfMonth || r.day || null }))
+  // Fallback: if there's only one sheet, guess by column names
+  if (sheetNames.length === 1) {
+    const all = XLSX.utils.sheet_to_json(workbook.Sheets[sheetNames[0]])
+    // crude heuristic: amounts negative -> expenses
+    const exp = all.filter(r => Number(r.Amount || r.amount) < 0).map((r, i)=>({ id:i+1, description:r.Description||'', amount: Math.abs(Number(r.Amount||r.amount)), frequency: r.Frequency||'monthly', day: r.Day||null }))
+    const inc = all.filter(r => Number(r.Amount || r.amount) >=0).map((r, i)=>({ id:i+1, description:r.Description||'', amount: Number(r.Amount||r.amount), frequency: r.Frequency||'monthly', day: r.Day||null }))
+    return { expenses: exp, income: inc }
+  }
+  return { expenses, income }
+}
+
+function addDays(date, days) {
+  const d = new Date(date)
+  d.setDate(d.getDate() + days)
+  return d
+}
+
+export function generateCalendarEvents(records, daysAhead=60) {
+  // Generate calendar events for next `daysAhead` days
+  const events = []
+  const start = new Date()
+  const end = addDays(start, daysAhead)
+
+  function pushOccurrences(items, type) {
+    items.forEach(item => {
+      // simple handling: monthly on given day, biweekly starting today, weekly etc.
+      if (item.frequency === 'monthly') {
+        // from start to end, for each month, set day
+        const s = new Date(start)
+        for (let d = new Date(s); d <= end; d.setMonth(d.getMonth()+1)) {
+          const year = d.getFullYear(); const month = d.getMonth()
+          const day = item.day || 1
+          const date = new Date(year, month, day)
+          if (date >= start && date <= end) {
+            events.push({ title: `${item.description} — ${item.amount}$`, start: date.toISOString().slice(0,10), extendedProps: { type } })
+          }
+        }
+      } else if (item.frequency === 'biweekly') {
+        // every 14 days from start
+        let cur = new Date(start)
+        while (cur <= end) {
+          events.push({ title: `${item.description} — ${item.amount}$`, start: cur.toISOString().slice(0,10), extendedProps: { type } })
+          cur = addDays(cur, 14)
+        }
+      } else if (item.frequency === 'weekly') {
+        let cur = new Date(start)
+        while (cur <= end) {
+          events.push({ title: `${item.description} — ${item.amount}$`, start: cur.toISOString().slice(0,10), extendedProps: { type } })
+          cur = addDays(cur, 7)
+        }
+      } else {
+        // default: put next occurrence on specified day within next period
+        const cur = new Date(start)
+        events.push({ title: `${item.description} — ${item.amount}$`, start: cur.toISOString().slice(0,10), extendedProps: { type } })
+      }
+    })
+  }
+
+  pushOccurrences(records.expenses || [], 'expense')
+  pushOccurrences(records.income || [], 'income')
+  return events
+}
+
+export function generateDailyBalances(records, startingBalance=0, days=60) {
+  // Create an array of { date: 'YYYY-MM-DD', balance: number }
+  const start = new Date()
+  const out = []
+  // build a map of date => net change
+  const net = {}
+  const addNet = (dateStr, amount) => { net[dateStr] = (net[dateStr]||0) + amount }
+
+  const events = generateCalendarEvents(records, days)
+  events.forEach(ev => {
+    const amtMatch = String(ev.title).match(/([0-9]+)\$/)
+    const amt = amtMatch ? Number(amtMatch[1]) : 0
+    if (ev.extendedProps && ev.extendedProps.type === 'expense') addNet(ev.start, -amt)
+    else addNet(ev.start, amt)
+  })
+
+  let balance = startingBalance
+  for (let i=0;i<days;i++) {
+    const date = addDays(start, i)
+    const dateStr = date.toISOString().slice(0,10)
+    balance += net[dateStr] || 0
+    out.push({ date: dateStr, balance: Number(balance.toFixed(2)) })
+  }
+  return out
+}
+
+/* =========================
+   FILE: README NOTES
+   =========================
+
+What I included for you in this starter:
+- A single-page Next.js layout with:
+  - Excel import (XLSX parsing) with heuristics for sheet names Expenses / Income
+  - Calendar using FullCalendar that shows generated occurrences for the next 60 days
+  - Cashflow chart using Recharts showing daily balances computed from events
+  - A sample dataset button
+  - Helpers in lib/dataHelpers.js that you should extend for your exact Excel columns and rules
+
+Next steps you might want to implement:
+- Persist data to a backend (Supabase) so the calendar updates across devices
+- Better frequency rules (e.g., payments on last day of month, handling specific start dates)
+- Edit events inline on the calendar (FullCalendar supports eventClick)
+- Import sync with OneDrive / Teams so your team can update the single source of truth
+- Authentication (Supabase Auth or NextAuth) if you want private data
+
+Supabase quick schema suggestion (SQL):
+
+create table accounts (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  starting_balance numeric
+);
+create table items (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid references accounts(id),
+  description text,
+  amount numeric,
+  frequency text,
+  day integer,
+  start_date date
+);
+
+Then you can have a server function that reads items and generates events for calendar/balances server-side.
+
+Deployment:
+- Push to GitHub and deploy to Vercel (free for hobby projects)
+- Add .env.local for Supabase keys and NEXT_PUBLIC_... variables
+
+
+*/
